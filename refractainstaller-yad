@@ -1033,8 +1033,8 @@ mkdir /target ;  check_exit
 
 make_luks () {
 exec 2>/dev/null
-	setpass=$(yad --form --field "Password:H" --field "Retype Password:H" --separator="@_@" \
-	--title $"Passphrase" --center --image="dialog-password" --button=$"OK":0 --text=$"Enter a passphrase for the encrypted volume: $mapper_name  ")
+	setpass=$(yad --form --field=$"Password:H" --field=$"Retype Password:H" --separator="@_@" \
+	--title=$"Passphrase" --center --image="dialog-password" --button=$"OK":0 --text=$"Enter a passphrase for the encrypted volume: $mapper_name  ")
 
 	if [[ $(echo $setpass  | awk -F"@_@" '{print $1}') != $(echo $setpass | awk -F"@_@" '{print $2}') ]] ; then
 		try_again
