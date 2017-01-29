@@ -504,7 +504,7 @@ yad --title=$"Install GRUB bootloader" --center --text=$"  Choose a location to 
 answer="$?"
 
 if [[ $answer = 0 ]] ; then
-grub_dev=$(find /dev -mindepth 1 -maxdepth 1  | egrep -o "*[sh]d[a-z]$|*nvme[0-9]n[0-9]$|*mmcblk[0-9]$" \
+grub_dev=$(find /dev -mindepth 1 -maxdepth 1  | egrep "*[sh]d[a-z]$|*nvme[0-9]n[0-9]$|*mmcblk[0-9]$" \
   | sort | awk '{print "\n" $0 }' \
   | yad --list --separator="" --title=$"Bootloader" --center --text=$"Choose a location to install the bootloader.
 " \
