@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-version="Refracta UEFI Installer (Yad) 9.2.1 (20170127)"
+version="Refracta UEFI Installer (Yad) 9.2.1 (20170216)"
 uefi_help="/usr/lib/refractainstaller/uefi_install.readme"
 
 TEXTDOMAIN=refractainstaller-gui
@@ -9,7 +9,7 @@ TEXTDOMAINDIR=/usr/share/locale/
 
  # Copyright 2011-2017 fsmithred@gmail.com
  # Portions may be copyright Dean Linkous and/or David Hare and/or others.
-+# UEFI code adapted from contributions by Peter Pranter.
+ # UEFI code adapted from contributions by Peter Pranter.
  # Based on refractainstaller-8.0.3 by Dean Linkous
  # License: GPL-3
  # This is free software with NO WARRANTY. Use at your own risk!
@@ -141,7 +141,7 @@ echo $"DO NOT close this terminal window until the installation is finished."
 
 # Record errors in a logfile.
 exec 2>"$error_log"
-
+echo "Version:	$version" >> "$error_log"
 #******************************************************************
 
 # Make sure yad is installed, and check the version.
@@ -173,23 +173,54 @@ show_uefi_help () {
 
 }
 
-# Check for UEFI boot. 
+# determine grub version now, it gets used for installing the bootloader and
+# preventing simple install from using ext4 with grub-legacy or grub-gfx.
+	grubversion=$(dpkg -l | egrep "ii|hi" | grep -v bin | grep -v doc | awk '$2 ~ "grub-[eglp]" { print $2}')
+#	grubversion="grub-legacy"   # for testing, comment out the above line and uncomment this one
+
+if ! [[ "$grubversion" =~ grub-efi ]] ; then
+	grub_efi_warning=$"### WARNING ### 
+grub-efi is not installed. 
+
+If you have a network connection, you can install grub-efi-amd64 and grub-efi-amd64-bin before running this installer.
+	
+If you have the deb packages, you will be given a chance to install them in the new system. (Refracta-8 has the packages.)"
+fi
+
+# Check for UEFI boot and EFI partition
 if [[ -d /sys/firmware/efi ]]; then
 	uefi_boot="yes"
+	esp_count=$(fdisk -l | awk '/EFI/ { print $0 }' | wc -l)
+
+	if [ "$esp_count" -eq 1 ] ; then
+		esp_dev=$(fdisk -l | awk '/EFI/ { print $1 }')
+		esp_dev_message=$"EFI partition found at $esp_dev\nIf this is not on the first hard disk, something may be wrong, and you should investigate the situation."
+	else
+		must_choose_esp="yes"
+		if [ "$esp_count" -eq 0 ] ; then
+			esp_dev_message=$"There is no EFI partition. You will need to create one."
+		elif [ "$esp_count" -gt 1 ] ; then
+			esp_dev_message=$"More than one EFI partition was detected. You will need to select one. Normally, it's on the first hard disk."
+
+		fi
+	fi
+
 	yad --title=$"$window_title" --width=480 --button=$"Help":0 \
 	--button=$"Continue":1 --button=$"Exit":2 --center \
 	--text=$"INSTRUCTIONS
 Read the Help. 
-Expert mode is default.
+Expert mode is default. You will see a screen with options.
 Do-not-install-bootloader is the default, whether you check the box
 or not. It refers to the bios-based grub bootloader.
 
-You can create a uefi bootloader when you install the grub-efi packages
-later in the installation process. That will result in this installation
-controlling the boot. 
+${grub_efi_warning}
+
+${esp_dev_message}
 
 You can skip creating the uefi bootloader, finish the installation, and
 use another installed linux to boot this one.
+
+DO NOT FORMAT A PRE-EXISTING EFI PARTITION!!!
 	"
 	ret="$?"
 	case "$ret" in 
@@ -206,35 +237,6 @@ or run refractainstaller from a root terminal."
 	exit 0
 fi
 
-
-	# Test for parted and test for esp_dev before uefi info window.
-if [[ $uefi_boot = "yes" ]] ; then
-	first_hd="/dev/sda"
-	if [[ $(type -p parted) ]] ; then
-		esp_dev=$(parted /dev/sda print | grep "boot, esp" | awk '{ printf("'"$first_hd"'%s",$1) }')
-		if [[ -n "$esp_dev" ]] ; then 
-			parted_message=$"parted detects an efi partition on $esp_dev
-			
-DO NOT FORMAT A PRE-EXISTING EFI PARTITION!!!"
-		else
-			must_choose_esp="yes"
-			parted_message=$"Warning:
-parted cannot find an efi partition on the first hard drive. 
-Note: If you think there should already be one from an existing system,
-then there may be a problem. Did your boot order change?
-
-DO NOT FORMAT A PRE-EXISTING EFI PARTITION!!!"
-		fi
-	else
-		must_choose_esp="yes"
-		# This message needs more instructions for gparted!
-		parted_message=$"parted is not installed. I can't search for an existing efi partition.
-Normally, it's /dev/sda1. If you think you have one, be sure of the location.
-
-DO NOT FORMAT A PRE-EXISTING EFI PARTITION!!!"
-	fi
-
-fi
 
 #******************************************************************
 
@@ -256,7 +258,7 @@ yad --title="$window_title" --width=480 --button=$"Expert installation":0 \
  type, including but not limited to express, implied, merchantability or 
  fitness of purpose. 
 
- Copyright 2011-2015 fsmithred@gmail.com, 
+ Copyright 2011-2017 fsmithred@gmail.com, 
  based on refractainstaller-8.0.3 by Dean Linkous. \n Version: $version \n\n\
  ${custom_text}\n
  EXPERIMENTAL UEFI INSTALLER
@@ -270,10 +272,6 @@ mode="$?"
 	esac
 
 
-# determine grub version now, it gets used for installing the bootloader and
-# preventing simple install from using ext4 with grub-legacy or grub-gfx.
-	grubversion=$(dpkg -l | egrep "ii|hi" | grep -v bin | grep -v doc | awk '$2 ~ "grub-[eglp]" { print $2}')
-#	grubversion="grub-legacy"   # for testing, comment out the above line and uncomment this one
 
 
 
@@ -519,7 +517,7 @@ fi
 
 ## Partition a disk ##### Simple install now does get to partition the disk - uncomment the conditional below to change it back.
 #if [[ $install = "expert" ]]; then
-yad --title=$"Partitioning" --button=$"Run GParted":0 --button=$"Run gdisk":1 \
+yad --title=$"Partitioning" --button=$"Run GParted":0 --button=$"Run cgdisk":1 \
     --width=650 --button=$"Skip this step":2 --button=$"Exit":3 --center \
     --text=$"  You need to have at least one partition ready for the installation, plus one for each separate  
   partition that you chose. If you already have the partition(s) ready, you can skip this step.
@@ -529,7 +527,7 @@ yad --title=$"Partitioning" --button=$"Run GParted":0 --button=$"Run gdisk":1 \
 	ans="$?"
 	case $ans in
 		0) 	gparted ;;
-		1)  xterm -T "Close this terminal after partioning" -fa mono -fs 12 -geometry 90x25+0+0 -hold -e gdisk ;;
+		1)  xterm -T "Close this terminal after partioning" -fa mono -fs 12 -geometry 90x25+0+0 -hold -e cgdisk ;;
 		2)  ;;
 		3) exit 0 ;;
 	esac
@@ -642,27 +640,21 @@ sleep 2
 
 
 choose_esp () {
-	# Select the esp in a yad window, same as with other partitions.
-	# Maybe show fdisk or gdisk output for the selected drive.
-	# Or maybe test the selected part with gdisk and warn if not ef00
-	esp_dev=$(find /dev -mindepth 1 -maxdepth 1  | egrep  "*[sh]d[a-z][1-99]|*nvme[0-9]n[0-9]p[1-99]|*mmcblk[0-9]p[1-99]" \
-		| sort | awk '{print "\n" $0 }' \
-		| yad --list   --title=$"EFI Partition" --center --text=$"Select the EFI partition.\nBe certain you are correct.\nNormally, you should not see this window, but something is odd." \
-		--separator="" --column ' ' --column $'Partitions' --height=380 --width=150 --button=$"OK":0)
 
+	esp_info=$(fdisk -l | awk '/EFI/ { print $0 }')
+	esp_dev_list=$(fdisk -l | awk '/EFI/ { print $1 }')
+	esp_count=$(fdisk -l | awk '/EFI/ { print $0 }' | wc -l)
+	
 
-	if [[ $esp_dev != "/dev/sda1" ]] ; then
-		yad --warning --title=Warning --text=$"
-The EFI partition is not /dev/sda1 as expected.
-Something may be seriously wrong. If you are sure that
-you know what you're doing, you may proceed. Otherwise
-you should exit.
-" \
-		--button=$"Exit":1 --button=$"Continue":0
-		if [[ $? -eq 1 ]] ; then
-			exit 0
-		fi
+	if [ "$esp_count" -eq 0 ] ; then
+		esp_dev_message=$"There is no EFI partition. You will need to create one.\mExotomg///"
+		yad --info --text="$esp_dev_message" --image=gtk-dialog-error --button=$"Close"
+		exit 1
+	else
+		esp_dev=$(yad --list   --title=$"Choose EFI partition" --center --text=$"Select the EFI partition. If there is more than one, you should use the one on the first hard disk.\n\n${esp_info}\n\n" "${esp_dev_list}" \
+	--separator="" --column ' ' --column $'Partitions' --height=180 --width=600 --button=$"OK":0)
 	fi
+	
 }
 
 if [[ $must_choose_esp = "yes" ]] ; then
@@ -859,7 +851,7 @@ fi
 
 # Show available swap partitions and choose one.
 choose_swap () {
-swap_info=$(/sbin/blkid |grep swap | awk 'if ($0 != "'$esp_dev'") {print "\n" $0 }' \
+swap_info=$(/sbin/blkid |grep swap | awk '{if ($0 != "'$esp_dev'") {print "\n" $0 }}' \
 | yad --list   --title=$"swap partition" --center --text=$"Select a partition for swap." \
   --separator="" --column ' ' --column $'Partitions' --height=180 --width=600 --button=$"OK":0)
 swap_dev=$(echo $swap_info | awk -F: '{ print $1 }')
@@ -1568,18 +1560,46 @@ if [[ $uefi_ready = "yes" ]] ; then
 fi
 
 
-do_it_for_me () {
+#***********************************************************************
+
+# Install (or not) grub-efi 
+
+chroot_terminal () {
 
 xterm -fa mono -fs 12 -geometry 90x20+0+0 -e 'chroot /target'
 
 }
+
+
+# Maybe test earlier to suggest installing grub-efi in live system.
+# If grub-efi is installed, show a button to install efi bootloader.
+# If grub-efi packages are in /target, message to use chroot terminal.
+# else show button to copy grub packages to /target.
+if [[ "$grubversion" =~ grub-efi ]] ; then
+	magic_button=$"--button=Install bootloader:3"   # Do not translate "button".
+	grub_efi_message=$"Install bootloader: will install the bootloader to the efi partition."
+elif ls /target/grub-efi-amd64_*.deb ; then
+	grub_efi_message=$"Grub packages are in /target. Open the chroot terminal and install the packages with the commands listed below."
+else
+	magic_button4=$"--button=Copy files:4"    # Do not translate "button".
+	grub_efi_message=$"Copy files: grub-efi is not installed. Select and copy grub-efi packages (if you have them) to /target. You will then be presented with a chroot terminal where you can install the packages with the commands listed below."
+fi
+
+
+#yad --info --title=$"Important notes" --geometry=500x300+0+0 \
+#	--text=$"A whole bunch of explanatory text for the Pause window and what each choice does." --button=$"Close":0 &
+#sleep 2
 
 # Pause to allow manual changes to /target for UEFI boot.
 df -h | yad --text-info --title=$"Pause" --center --width=600 --height=550 \
 	--text=$"
 The program will pause to allow you to work in another window
 
-Chroot: will open an xterm in the chrooted installation. 
+${grub_efi_message}
+
+Chroot: will open an xterm in the chrooted installation where you
+can install the grub-efi packages. If grub-efi is already installed,
+you can install the bootloader manually.
 $esp_dev should already be mounted to /target/boot/efi/ (check below)
 In that terminal, run:
 
@@ -1587,24 +1607,45 @@ In that terminal, run:
   update-grub
   exit
 
-Continue: will proceed whether or not you have done the above. If not,
+Continue: will proceed whether or not you have installed a bootloader. If not,
 you will need to have another way to boot this installation.
+NOTE: This is the default if you just press ENTER.
 
 Abort: will exit the installer and abort the installation.
+
+
+
+
 " \
---button=$"Abort":2 --button=$"Chroot":1 --button=$"Continue":0
+"${magic_button4}" "${magic_button}" --button=$"Abort":2 --button=$"Chroot":1 --button=$"Continue":0 
 ret="$?"
 
 if [[ $ret -eq 1 ]] ; then
-	do_it_for_me
+	chroot_terminal
 fi
 
 if [[ ret -eq 2 ]] ; then
+	cleanup
 	exit 0
+fi
+
+if [[ ret -eq 3 ]] ; then
+	chroot /target grub-install  # --bootloader-id="$some-name" (default comes from where? maybe /etc/default/grub, maybe lsb_release.)
+	chroot /target update-grub
+fi
+
+if [[ ret -eq 4 ]] ; then
+	grub_packages=$(yad --file --multiple --title=$"GRUB Packages" \
+		--text=$"Select the grub-efi-amd64 packages.\n\nBoth grub-efi packages will be copied to /target." \
+		--height=400 --width=500 --separator ' ')
+	cp  $(echo "$grub_packages") /target
+
+	chroot_terminal
 fi
 
 
 
+ 
 install_grub () {
 # Setup GRUB 
 echo $"Setting up grub bootloader.. Please wait.."
